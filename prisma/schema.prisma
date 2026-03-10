@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model MonitoredCompany {
+  id          String   @id @default(cuid())
+  name        String
+  linkedinUrl String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employees EmployeeProfile[]
+  scrapeJobs ScrapeJob[]
+
+  @@map("monitored_companies")
+}
+
+model EmployeeProfile {
+  id            String    @id @default(cuid())
+  companyId     String
+  name          String
+  linkedinUrl   String    @unique
+  role          String?
+  isActive      Boolean   @default(true)
+  lastScrapedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company MonitoredCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  posts   ScrapedPost[]
+
+  @@index([companyId])
+  @@map("employee_profiles")
+}
+
+model ScrapedPost {
+  id                String   @id @default(cuid())
+  employeeProfileId String
+  linkedinPostUrl   String
+  postUrn           String   @unique
+  postText          String
+  datePosted        DateTime?
+  numLikes          Int      @default(0)
+  numComments       Int      @default(0)
+  engagementsCollected Boolean @default(false)
+  scrapedAt         DateTime @default(now())
+
+  employeeProfile EmployeeProfile @relation(fields: [employeeProfileId], references: [id], onDelete: Cascade)
+  engagements     Engagement[]
+
+  @@index([employeeProfileId])
+  @@index([postUrn])
+  @@map("scraped_posts")
+}
+
+model Engager {
+  id              String    @id @default(cuid())
+  linkedinUrl     String?   @unique // Optional — YouTube commenters may not have LinkedIn
+  name            String
+  headline        String?
+  country         String?
+  city            String?
+  currentCompany  String?
+  currentTitle    String?
+  aboutText       String?
+  profileImageUrl String?
+  profileEnriched Boolean   @default(false)
+  enrichedAt      DateTime?
+  leadScore       Int       @default(0)
+  scoreFactors    String?   // JSON: { seniority: 30, engagementQuality: 25, ... }
+  source          String    @default("linkedin") // "linkedin" | "youtube"
+  email           String?
+  youtubeChannel  String?
+  enriched            Boolean   @default(false)
+  dataEnrichedAt      DateTime?
+  enrichmentProvider  String?   // "apollo" | "zoominfo" | "leadiq"
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  engagements    Engagement[]
+  outreachDrafts OutreachDraft[]
+  enrichmentLists EnrichmentListEngager[]
+
+  @@index([country])
+  @@index([profileEnriched])
+  @@index([leadScore])
+  @@index([source])
+  @@map("engagers")
+}
+
+model Engagement {
+  id             String   @id @default(cuid())
+  engagerId      String
+  scrapedPostId  String?  // null for YouTube engagements
+  youtubeVideoId String?  // null for LinkedIn engagements
+  type           String   // "like" | "comment"
+  commentText    String?
+  source         String   @default("linkedin") // "linkedin" | "youtube"
+  detectedAt     DateTime @default(now())
+
+  engager       Engager        @relation(fields: [engagerId], references: [id], onDelete: Cascade)
+  scrapedPost   ScrapedPost?   @relation(fields: [scrapedPostId], references: [id], onDelete: Cascade)
+  youtubeVideo  YouTubeVideo?  @relation(fields: [youtubeVideoId], references: [id], onDelete: Cascade)
+  outreachDrafts OutreachDraft[]
+
+  @@unique([engagerId, scrapedPostId, type])
+  @@index([engagerId])
+  @@index([scrapedPostId])
+  @@index([youtubeVideoId])
+  @@map("engagements")
+}
+
+model OutreachDraft {
+  id                      String   @id @default(cuid())
+  engagerId               String
+  engagementId            String
+  icebreaker              String
+  fullDraft               String
+  personalizationContext  String?  // JSON string
+  channel                 String   @default("linkedin") // "linkedin" | "email"
+  emailSubject            String?  // subject line for email drafts
+  emailDraft              String?  // full email body
+  status                  String   @default("draft") // "draft" | "exported" | "sent"
+  editedDraft             String?  // BDR's customized version
+  editedEmailDraft        String?  // BDR's customized email version
+  outcome                 String?  // "replied" | "connected" | "ignored"
+  sentAt                  DateTime?
+  bdrNotes                String?
+  generatedAt             DateTime @default(now())
+
+  engager    Engager    @relation(fields: [engagerId], references: [id], onDelete: Cascade)
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@unique([engagementId, channel])
+  @@index([engagerId])
+  @@index([status])
+  @@index([outcome])
+  @@index([channel])
+  @@map("outreach_drafts")
+}
+
+model ScrapeJob {
+  id             String    @id @default(cuid())
+  companyId      String
+  status         String    @default("queued") // "queued" | "running" | "completed" | "failed"
+  progress       Int       @default(0)
+  currentStep    String?
+  engagersFound  Int       @default(0)
+  postsFound     Int       @default(0)
+  draftsGenerated Int      @default(0)
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  company   MonitoredCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  exportLog ExportLog?
+
+  @@index([status, createdAt])
+  @@index([companyId])
+  @@map("scrape_jobs")
+}
+
+model ExportLog {
+  id                String   @id @default(cuid())
+  scrapeJobId       String   @unique
+  sheetUrl          String?
+  countriesExported String?  // JSON string
+  totalRows         Int      @default(0)
+  exportedAt        DateTime @default(now())
+
+  scrapeJob ScrapeJob @relation(fields: [scrapeJobId], references: [id], onDelete: Cascade)
+
+  @@map("export_logs")
+}
+
+model ICPConfig {
+  id               String  @id @default(cuid())
+  name             String  @default("Default")
+  targetTitles     String? // JSON array: ["VP", "Director", "Head of"]
+  excludeTitles    String? // JSON array: ["Student", "Intern", "Recruiter"]
+  excludeCompanies String? // JSON array: competitor company names
+  targetCountries  String? // JSON array: priority countries
+  minLeadScore     Int     @default(20)
+  isActive         Boolean @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("icp_configs")
+}
+
+model YouTubeVideo {
+  id                String    @id @default(cuid())
+  url               String    @unique
+  videoId           String    @unique
+  title             String?
+  channelName       String?
+  channelUrl        String?
+  commentsCollected Boolean   @default(false)
+  totalComments     Int       @default(0)
+  createdAt         DateTime  @default(now())
+  scrapedAt         DateTime?
+
+  engagements Engagement[]
+  scrapeJob   YouTubeScrapeJob?
+
+  @@map("youtube_videos")
+}
+
+model YouTubeScrapeJob {
+  id              String    @id @default(cuid())
+  youtubeVideoId  String    @unique
+  status          String    @default("queued") // "queued" | "running" | "completed" | "failed"
+  progress        Int       @default(0)
+  currentStep     String?
+  engagersFound   Int       @default(0)
+  draftsGenerated Int       @default(0)
+  errorMessage    String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  youtubeVideo YouTubeVideo @relation(fields: [youtubeVideoId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("youtube_scrape_jobs")
+}
+
+model EnrichmentList {
+  id            String    @id @default(cuid())
+  name          String
+  provider      String    @default("apollo") // "apollo" | "zoominfo" | "leadiq"
+  status        String    @default("pending") // "pending" | "processing" | "completed" | "failed"
+  totalCount    Int       @default(0)
+  enrichedCount Int       @default(0)
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  engagers EnrichmentListEngager[]
+
+  @@index([status])
+  @@map("enrichment_lists")
+}
+
+model EnrichmentListEngager {
+  id               String  @id @default(cuid())
+  enrichmentListId String
+  engagerId        String
+  status           String  @default("pending") // "pending" | "enriched" | "failed" | "not_found"
+  errorDetail      String?
+
+  enrichmentList EnrichmentList @relation(fields: [enrichmentListId], references: [id], onDelete: Cascade)
+  engager        Engager        @relation(fields: [engagerId], references: [id], onDelete: Cascade)
+
+  @@unique([enrichmentListId, engagerId])
+  @@index([enrichmentListId])
+  @@index([engagerId])
+  @@map("enrichment_list_engagers")
+}
+
+model BrandVoice {
+  id          String  @id @default(cuid())
+  name        String
+  companyName String
+  guidelines  String  // Main brand voice instructions
+  tone        String? // e.g., "professional yet approachable"
+  doRules     String? // Things to do in outreach
+  dontRules   String? // Things to avoid
+  isDefault   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("brand_voices")
+}
