@@ -51,8 +51,8 @@ The end result: a Google Sheet full of scored, enriched leads with ready-to-send
 ## Getting Started
 
 ```bash
-git clone https://github.com/iamdvirsharon/regional-agent.git
-cd regional-agent
+git clone https://github.com/iamdvirsharon/outreach-ai.git
+cd outreach-ai
 npm install
 ```
 
