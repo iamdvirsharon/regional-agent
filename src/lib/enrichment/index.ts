@@ -5,14 +5,14 @@ import { ApolloClient } from "./apollo"
 import { ZoomInfoClient } from "./zoominfo"
 import { LeadIQClient } from "./leadiq"
 
-export function getEnrichmentClient(provider: EnrichmentProvider): EnrichmentClient {
+export async function getEnrichmentClient(provider: EnrichmentProvider): Promise<EnrichmentClient> {
   switch (provider) {
     case "apollo":
-      return new ApolloClient()
+      return ApolloClient.create()
     case "zoominfo":
-      return new ZoomInfoClient()
+      return ZoomInfoClient.create()
     case "leadiq":
-      return new LeadIQClient()
+      return LeadIQClient.create()
     default:
       throw new Error(`Unknown enrichment provider: ${provider}`)
   }

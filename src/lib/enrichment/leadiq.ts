@@ -1,6 +1,7 @@
 // LeadIQ enrichment adapter (GraphQL API)
 
 import type { EnrichmentClient, EnrichmentInput, EnrichmentResult } from "./types"
+import { getConfigValue } from "@/lib/config"
 
 const SEARCH_PEOPLE_QUERY = `
 query SearchPeople($input: SearchPeopleInput!) {
@@ -24,10 +25,14 @@ query SearchPeople($input: SearchPeopleInput!) {
 export class LeadIQClient implements EnrichmentClient {
   private apiKey: string
 
-  constructor() {
-    const key = process.env.LEADIQ_API_KEY
+  constructor(apiKey: string) {
+    this.apiKey = apiKey
+  }
+
+  static async create(): Promise<LeadIQClient> {
+    const key = await getConfigValue("LEADIQ_API_KEY")
     if (!key) throw new Error("LEADIQ_API_KEY not set")
-    this.apiKey = key
+    return new LeadIQClient(key)
   }
 
   async enrich(input: EnrichmentInput): Promise<EnrichmentResult | null> {

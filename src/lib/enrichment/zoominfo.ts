@@ -1,18 +1,23 @@
 // ZoomInfo enrichment adapter
 
 import type { EnrichmentClient, EnrichmentInput, EnrichmentResult } from "./types"
+import { getConfigValue } from "@/lib/config"
 
 export class ZoomInfoClient implements EnrichmentClient {
   private clientId: string
   private privateKey: string
   private accessToken: string | null = null
 
-  constructor() {
-    const clientId = process.env.ZOOMINFO_CLIENT_ID
-    const privateKey = process.env.ZOOMINFO_PRIVATE_KEY
-    if (!clientId || !privateKey) throw new Error("ZOOMINFO_CLIENT_ID and ZOOMINFO_PRIVATE_KEY must be set")
+  constructor(clientId: string, privateKey: string) {
     this.clientId = clientId
     this.privateKey = privateKey
+  }
+
+  static async create(): Promise<ZoomInfoClient> {
+    const clientId = await getConfigValue("ZOOMINFO_CLIENT_ID")
+    const privateKey = await getConfigValue("ZOOMINFO_PRIVATE_KEY")
+    if (!clientId || !privateKey) throw new Error("ZOOMINFO_CLIENT_ID and ZOOMINFO_PRIVATE_KEY must be set")
+    return new ZoomInfoClient(clientId, privateKey)
   }
 
   private async authenticate(): Promise<string> {

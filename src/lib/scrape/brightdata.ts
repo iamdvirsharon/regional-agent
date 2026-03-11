@@ -1,6 +1,8 @@
 // Bright Data LinkedIn scraping layer
 // BD is free (employee at Bright Data) — no artificial limits
 
+import { getConfigValue } from "@/lib/config"
+
 export interface LinkedInPost {
   url: string
   urn: string
@@ -56,14 +58,14 @@ export interface YouTubeComment {
   datePosted: string | null
 }
 
-function getApiKey(): string {
-  const apiKey = process.env.BRIGHT_DATA_API_KEY
-  if (!apiKey) throw new Error("BRIGHT_DATA_API_KEY not set")
+async function getApiKey(): Promise<string> {
+  const apiKey = await getConfigValue("BRIGHT_DATA_API_KEY")
+  if (!apiKey) throw new Error("BRIGHT_DATA_API_KEY not set. Add it in Settings → API Keys.")
   return apiKey
 }
 
 async function triggerDataset<T>(datasetId: string, input: unknown[]): Promise<T[]> {
-  const apiKey = getApiKey()
+  const apiKey = await getApiKey()
 
   const res = await fetch(
     `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${datasetId}&include_errors=true&type=discover_new&discover_by=url`,
@@ -95,7 +97,7 @@ async function triggerDataset<T>(datasetId: string, input: unknown[]): Promise<T
 }
 
 async function pollSnapshot<T>(snapshotId: string, maxAttempts = 60): Promise<T[]> {
-  const apiKey = getApiKey()
+  const apiKey = await getApiKey()
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 10000)) // Wait 10s between polls
@@ -133,7 +135,7 @@ export async function discoverPosts(
   profileUrl: string,
   numPosts: number = 20
 ): Promise<LinkedInPost[]> {
-  const datasetId = process.env.BRIGHT_DATA_POSTS_DATASET || "gd_lyy3tktm25m4avu764"
+  const datasetId = (await getConfigValue("BRIGHT_DATA_POSTS_DATASET")) || "gd_lyy3tktm25m4avu764"
 
   const rawPosts = await triggerDataset<Record<string, unknown>>(datasetId, [
     { url: profileUrl, num_of_posts: numPosts },
@@ -157,7 +159,7 @@ export async function discoverPosts(
 export async function collectPostEngagement(
   postUrl: string
 ): Promise<PostComment[]> {
-  const datasetId = process.env.BRIGHT_DATA_COMMENTS_DATASET || "gd_s2s1us1i1kj1oydz17"
+  const datasetId = (await getConfigValue("BRIGHT_DATA_COMMENTS_DATASET")) || "gd_s2s1us1i1kj1oydz17"
 
   const rawComments = await triggerDataset<Record<string, unknown>>(datasetId, [
     { url: postUrl },
@@ -179,7 +181,7 @@ export async function collectPostEngagement(
 export async function collectPostLikers(
   postUrl: string
 ): Promise<PostLiker[]> {
-  const datasetId = process.env.BRIGHT_DATA_LIKERS_DATASET
+  const datasetId = await getConfigValue("BRIGHT_DATA_LIKERS_DATASET")
   if (!datasetId) {
     console.warn("BRIGHT_DATA_LIKERS_DATASET not configured, skipping likers collection")
     return []
@@ -204,7 +206,7 @@ export async function discoverCompanyEmployees(
   companyLinkedinUrl: string,
   limit: number = 50
 ): Promise<CompanyEmployee[]> {
-  const datasetId = process.env.BRIGHT_DATA_COMPANY_DATASET
+  const datasetId = await getConfigValue("BRIGHT_DATA_COMPANY_DATASET")
   if (!datasetId) {
     throw new Error("BRIGHT_DATA_COMPANY_DATASET not configured")
   }
@@ -228,7 +230,7 @@ export async function discoverCompanyEmployees(
 export async function enrichProfile(
   profileUrl: string
 ): Promise<LinkedInProfile | null> {
-  const datasetId = process.env.BRIGHT_DATA_PROFILES_DATASET || "gd_l1viktl72bvl7bjuj0"
+  const datasetId = (await getConfigValue("BRIGHT_DATA_PROFILES_DATASET")) || "gd_l1viktl72bvl7bjuj0"
 
   try {
     const profiles = await triggerDataset<Record<string, unknown>>(datasetId, [
@@ -263,7 +265,7 @@ export async function enrichProfile(
 export async function enrichProfilesBatch(
   profileUrls: string[]
 ): Promise<Map<string, LinkedInProfile>> {
-  const datasetId = process.env.BRIGHT_DATA_PROFILES_DATASET || "gd_l1viktl72bvl7bjuj0"
+  const datasetId = (await getConfigValue("BRIGHT_DATA_PROFILES_DATASET")) || "gd_l1viktl72bvl7bjuj0"
   const results = new Map<string, LinkedInProfile>()
 
   if (profileUrls.length === 0) return results
@@ -303,7 +305,7 @@ export async function enrichProfilesBatch(
 export async function collectYouTubeComments(
   videoUrl: string
 ): Promise<YouTubeComment[]> {
-  const datasetId = process.env.BRIGHT_DATA_YOUTUBE_COMMENTS_DATASET
+  const datasetId = await getConfigValue("BRIGHT_DATA_YOUTUBE_COMMENTS_DATASET")
   if (!datasetId) {
     throw new Error("BRIGHT_DATA_YOUTUBE_COMMENTS_DATASET not configured")
   }

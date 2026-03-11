@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { getEnrichmentClient, type EnrichmentProvider } from "./index"
 import { calculateLeadScore } from "@/lib/scrape/scoring"
 import { generateEmailDraft, type DraftContext } from "@/lib/scrape/claude"
+import { hasConfigValue } from "@/lib/config"
 
 export async function runEnrichment(listId: string): Promise<void> {
   const list = await prisma.enrichmentList.findUnique({
@@ -21,24 +22,25 @@ export async function runEnrichment(listId: string): Promise<void> {
 
   // Pre-flight: check that the provider's API key is actually configured
   const provider = list.provider as EnrichmentProvider
-  const keyCheck: Record<string, () => boolean> = {
-    apollo: () => !!process.env.APOLLO_API_KEY,
-    zoominfo: () => !!process.env.ZOOMINFO_CLIENT_ID && !!process.env.ZOOMINFO_PRIVATE_KEY,
-    leadiq: () => !!process.env.LEADIQ_API_KEY,
+  const keyCheckMap: Record<string, () => Promise<boolean>> = {
+    apollo: () => hasConfigValue("APOLLO_API_KEY"),
+    zoominfo: async () => (await hasConfigValue("ZOOMINFO_CLIENT_ID")) && (await hasConfigValue("ZOOMINFO_PRIVATE_KEY")),
+    leadiq: () => hasConfigValue("LEADIQ_API_KEY"),
   }
 
-  if (keyCheck[provider] && !keyCheck[provider]()) {
+  const checker = keyCheckMap[provider]
+  if (checker && !(await checker())) {
     await prisma.enrichmentList.update({
       where: { id: listId },
       data: {
         status: "failed",
-        errorMessage: `API key for ${provider} is not configured. Add the required environment variable and try again.`,
+        errorMessage: `API key for ${provider} is not configured. Add the key in Settings → API Keys and try again.`,
       },
     })
     return
   }
 
-  const client = getEnrichmentClient(provider)
+  const client = await getEnrichmentClient(provider)
   let enrichedCount = 0
   const failedEngagerIds = new Set<string>()
 

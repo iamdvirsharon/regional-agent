@@ -1,14 +1,19 @@
 // Apollo.io enrichment adapter
 
 import type { EnrichmentClient, EnrichmentInput, EnrichmentResult } from "./types"
+import { getConfigValue } from "@/lib/config"
 
 export class ApolloClient implements EnrichmentClient {
   private apiKey: string
 
-  constructor() {
-    const key = process.env.APOLLO_API_KEY
+  constructor(apiKey: string) {
+    this.apiKey = apiKey
+  }
+
+  static async create(): Promise<ApolloClient> {
+    const key = await getConfigValue("APOLLO_API_KEY")
     if (!key) throw new Error("APOLLO_API_KEY not set")
-    this.apiKey = key
+    return new ApolloClient(key)
   }
 
   async enrich(input: EnrichmentInput): Promise<EnrichmentResult | null> {

@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Settings, Plus, Check, Target, Save } from "lucide-react"
+import { useEffect, useState, useCallback } from "react"
+import { Settings, Plus, Check, Target, Save, Key, Eye, EyeOff, Trash2, Pencil } from "lucide-react"
 
 interface ICPConfig {
   id: string
@@ -25,16 +25,23 @@ interface BrandVoice {
   isDefault: boolean
 }
 
-interface ProviderStatus {
-  id: string
-  name: string
+interface ApiKeyInfo {
+  key: string
+  label: string
+  description: string
   configured: boolean
+  source: "database" | "environment" | null
+  maskedValue: string | null
+}
+
+interface ApiKeyGroup {
+  group: string
+  keys: ApiKeyInfo[]
 }
 
 export default function SettingsPage() {
   const [voices, setVoices] = useState<BrandVoice[]>([])
   const [icpConfigs, setIcpConfigs] = useState<ICPConfig[]>([])
-  const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({})
   const [icpForm, setIcpForm] = useState({
     name: "Default",
     targetTitles: "",
@@ -54,6 +61,23 @@ export default function SettingsPage() {
     dontRules: "",
     isDefault: true,
   })
+
+  // API Keys state
+  const [apiKeyGroups, setApiKeyGroups] = useState<ApiKeyGroup[]>([])
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState("")
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [showValues, setShowValues] = useState<Record<string, boolean>>({})
+
+  const fetchApiKeys = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/api-keys")
+      const data = await res.json()
+      setApiKeyGroups(data.groups || [])
+    } catch {
+      // ignore
+    }
+  }, [])
 
   async function fetchVoices() {
     const res = await fetch("/api/settings/brand-voice")
@@ -98,15 +122,8 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchVoices()
     fetchIcp()
-    fetch("/api/enrichment/providers")
-      .then((r) => r.json())
-      .then((data) => {
-        const map: Record<string, boolean> = {}
-        data.providers.forEach((p: ProviderStatus) => { map[p.id] = p.configured })
-        setProviderStatus(map)
-      })
-      .catch(() => {})
-  }, [])
+    fetchApiKeys()
+  }, [fetchApiKeys])
 
   async function saveBrandVoice(e: React.FormEvent) {
     e.preventDefault()
@@ -120,13 +137,155 @@ export default function SettingsPage() {
     fetchVoices()
   }
 
+  async function saveApiKey(keyName: string) {
+    if (!editValue.trim()) return
+    setSavingKey(keyName)
+    await fetch("/api/settings/api-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: keyName, value: editValue.trim() }),
+    })
+    setSavingKey(null)
+    setEditingKey(null)
+    setEditValue("")
+    fetchApiKeys()
+  }
+
+  async function deleteApiKey(keyName: string) {
+    await fetch(`/api/settings/api-keys?key=${encodeURIComponent(keyName)}`, {
+      method: "DELETE",
+    })
+    fetchApiKeys()
+  }
+
   return (
     <div className="p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Configure brand voice and outreach parameters
+          Configure API keys, brand voice, and outreach parameters
         </p>
+      </div>
+
+      {/* API Keys Section */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Key className="h-5 w-5 text-blue-600" />
+          <h2 className="text-lg font-semibold text-gray-900">API Keys</h2>
+        </div>
+        <p className="text-sm text-gray-500">
+          Add your API keys here. Keys saved in the app override environment variables.
+        </p>
+
+        {apiKeyGroups.map((group) => (
+          <div key={group.group} className="bg-white rounded-xl border p-5">
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+              {group.group}
+            </h3>
+            <div className="space-y-3">
+              {group.keys.map((apiKey) => (
+                <div key={apiKey.key} className="flex items-center gap-3 py-2 border-b last:border-0 border-gray-50">
+                  {/* Status dot */}
+                  <span
+                    className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                      apiKey.configured ? "bg-green-500" : "bg-gray-300"
+                    }`}
+                    title={apiKey.configured ? `Configured via ${apiKey.source}` : "Not configured"}
+                  />
+
+                  {/* Key info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900">{apiKey.label}</span>
+                      {apiKey.source === "environment" && apiKey.configured && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">
+                          ENV
+                        </span>
+                      )}
+                      {apiKey.source === "database" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
+                          SAVED
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">{apiKey.description}</p>
+                  </div>
+
+                  {/* Value / Edit */}
+                  {editingKey === apiKey.key ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        placeholder="Paste API key..."
+                        className="w-64 px-3 py-1.5 border rounded-lg text-sm font-mono"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveApiKey(apiKey.key)
+                          if (e.key === "Escape") { setEditingKey(null); setEditValue("") }
+                        }}
+                      />
+                      <button
+                        onClick={() => saveApiKey(apiKey.key)}
+                        disabled={!editValue.trim() || savingKey === apiKey.key}
+                        className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {savingKey === apiKey.key ? "..." : "Save"}
+                      </button>
+                      <button
+                        onClick={() => { setEditingKey(null); setEditValue("") }}
+                        className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {apiKey.maskedValue && (
+                        <code className="text-xs text-gray-400 font-mono">
+                          {showValues[apiKey.key] ? apiKey.maskedValue : "••••••••"}
+                        </code>
+                      )}
+                      {apiKey.configured && (
+                        <button
+                          onClick={() => setShowValues((prev) => ({ ...prev, [apiKey.key]: !prev[apiKey.key] }))}
+                          className="p-1 text-gray-400 hover:text-gray-600"
+                          title={showValues[apiKey.key] ? "Hide" : "Show masked value"}
+                        >
+                          {showValues[apiKey.key] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setEditingKey(apiKey.key); setEditValue("") }}
+                        className="p-1 text-gray-400 hover:text-blue-600"
+                        title={apiKey.configured ? "Update key" : "Add key"}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      {apiKey.source === "database" && (
+                        <button
+                          onClick={() => deleteApiKey(apiKey.key)}
+                          className="p-1 text-gray-400 hover:text-red-600"
+                          title="Remove saved key (reverts to env variable)"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {apiKeyGroups.length === 0 && (
+          <div className="bg-white rounded-xl border p-8 text-center">
+            <Key className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm text-gray-500">Loading API key configuration...</p>
+          </div>
+        )}
       </div>
 
       {/* Brand Voice Section */}
@@ -250,10 +409,14 @@ export default function SettingsPage() {
         <div className="flex items-center gap-2">
           <Target className="h-5 w-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Ideal Customer Profile (ICP)</h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold uppercase tracking-wider">
+            Optional
+          </span>
         </div>
         <form onSubmit={saveIcp} className="bg-white rounded-xl border p-6 space-y-4">
           <p className="text-sm text-gray-500">
-            Define who your ideal leads are. The scoring engine uses this to prioritize engagers and skip irrelevant ones.
+            Optionally define who your ideal leads are. The scoring engine can use this to prioritize engagers and filter out irrelevant ones.
+            The app works fine without ICP configuration — all engagers will receive a default score.
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -331,42 +494,6 @@ export default function SettingsPage() {
             </button>
           </div>
         </form>
-      </div>
-
-      {/* Environment Info */}
-      <div className="bg-white rounded-xl border p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Configuration Checklist</h2>
-        <div className="space-y-2 text-sm">
-          <ConfigItem label="BRIGHT_DATA_API_KEY" description="Required for LinkedIn scraping" />
-          <ConfigItem label="BRIGHT_DATA_LIKERS_DATASET" description="Optional — enables post liker collection" />
-          <ConfigItem label="BRIGHT_DATA_COMPANY_DATASET" description="Optional — enables auto-discover employees" />
-          <ConfigItem label="BRIGHT_DATA_YOUTUBE_COMMENTS_DATASET" description="Required for YouTube comment scraping" />
-          <ConfigItem label="ANTHROPIC_API_KEY" description="Required for AI draft generation" />
-          <ConfigItem label="APOLLO_API_KEY" description="Apollo.io people enrichment" status={providerStatus.apollo} />
-          <ConfigItem label="ZOOMINFO_CLIENT_ID" description="ZoomInfo enrichment (client ID)" status={providerStatus.zoominfo} />
-          <ConfigItem label="ZOOMINFO_PRIVATE_KEY" description="ZoomInfo enrichment (private key)" status={providerStatus.zoominfo} />
-          <ConfigItem label="LEADIQ_API_KEY" description="LeadIQ people enrichment" status={providerStatus.leadiq} />
-          <ConfigItem label="GOOGLE_SERVICE_ACCOUNT_EMAIL" description="Required for Sheets export" />
-          <ConfigItem label="GOOGLE_SERVICE_ACCOUNT_KEY" description="Required for Sheets export" />
-          <ConfigItem label="GOOGLE_SHEET_ID" description="Target spreadsheet for BDR delivery" />
-        </div>
-        <p className="text-xs text-gray-400 mt-4">
-          Configure these in your .env.local file. See .env.example for all options.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function ConfigItem({ label, description, status }: { label: string; description: string; status?: boolean }) {
-  return (
-    <div className="flex items-center justify-between py-1.5">
-      <div className="flex items-center gap-2">
-        {status !== undefined && (
-          <span className={`inline-block w-2 h-2 rounded-full ${status ? "bg-green-500" : "bg-red-400"}`} />
-        )}
-        <code className="text-xs bg-gray-100 px-2 py-0.5 rounded font-mono">{label}</code>
-        <span className="text-xs text-gray-500">{description}</span>
       </div>
     </div>
   )

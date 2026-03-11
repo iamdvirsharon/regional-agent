@@ -2,10 +2,22 @@
 // Reuses the Anthropic SDK pattern from az/src/lib/scan/claude.ts
 
 import Anthropic from "@anthropic-ai/sdk"
+import { getConfigValue } from "@/lib/config"
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+let _client: Anthropic | null = null
+
+async function getClient(): Promise<Anthropic> {
+  if (_client) return _client
+  const apiKey = await getConfigValue("ANTHROPIC_API_KEY")
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured. Add it in Settings → API Keys.")
+  _client = new Anthropic({ apiKey })
+  return _client
+}
+
+// Reset client when key changes (called by config cache invalidation)
+export function resetClaudeClient() {
+  _client = null
+}
 
 export interface OutreachDraftResult {
   icebreaker: string
@@ -37,7 +49,8 @@ export interface DraftContext {
 export async function generateOutreachDraft(
   ctx: DraftContext
 ): Promise<OutreachDraftResult> {
-  const model = process.env.CLAUDE_MODEL || "claude-sonnet-4-6"
+  const client = await getClient()
+  const model = (await getConfigValue("CLAUDE_MODEL")) || "claude-sonnet-4-6"
 
   const prompt = `You are a B2B sales development representative at Bright Data writing a personalized LinkedIn DM.
 
@@ -136,7 +149,8 @@ export async function generateOutreachDraftsBatch(
 export async function generateEmailDraft(
   ctx: DraftContext
 ): Promise<EmailDraftResult> {
-  const model = process.env.CLAUDE_MODEL || "claude-sonnet-4-6"
+  const client = await getClient()
+  const model = (await getConfigValue("CLAUDE_MODEL")) || "claude-sonnet-4-6"
 
   const prompt = `You are a B2B sales development representative at Bright Data writing a personalized cold outreach email.
 
