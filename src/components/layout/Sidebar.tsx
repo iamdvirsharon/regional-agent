@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import {
   LayoutDashboard,
-  Building2,
   Users,
   MessageSquare,
   Upload,
@@ -13,7 +12,6 @@ import {
   Zap,
   LogOut,
   Shield,
-  Video,
   Search,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -34,8 +32,6 @@ const allNavItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, adminOnly: false },
   // SETUP group
   { href: "/settings", label: "Settings", icon: Settings, adminOnly: true, group: "setup", completionKey: "hasKeys" },
-  { href: "/companies", label: "Companies", icon: Building2, adminOnly: true, group: "setup", completionKey: "hasCompanies" },
-  { href: "/youtube", label: "YouTube", icon: Video, adminOnly: true, group: "setup" },
   // PIPELINE group
   { href: "/engagers", label: "Engagers", icon: Users, adminOnly: false, group: "pipeline", completionKey: "hasEngagers" },
   { href: "/enrichment", label: "Enrichment", icon: Search, adminOnly: true, group: "pipeline" },

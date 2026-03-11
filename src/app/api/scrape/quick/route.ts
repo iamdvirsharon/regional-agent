@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getBaseUrl } from "@/lib/url"
+import { runQuickScrapeJob } from "@/lib/scrape/engine"
+
+export const maxDuration = 300
 
 export async function GET(req: NextRequest) {
   const jobId = req.nextUrl.searchParams.get("jobId")
@@ -33,7 +35,12 @@ export async function POST(req: NextRequest) {
 
   // Basic LinkedIn post URL validation
   const trimmed = postUrl.trim()
-  if (!trimmed.includes("linkedin.com/") || !trimmed.includes("/posts/") && !trimmed.includes("/pulse/") && !trimmed.includes("activity")) {
+  if (
+    !trimmed.includes("linkedin.com/") ||
+    (!trimmed.includes("/posts/") &&
+      !trimmed.includes("/pulse/") &&
+      !trimmed.includes("activity"))
+  ) {
     return NextResponse.json(
       { error: "Please provide a valid LinkedIn post URL (e.g., https://www.linkedin.com/posts/...)" },
       { status: 400 }
@@ -55,10 +62,13 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Create a scrape job (no company)
+  // Create a scrape job — start as "running" immediately
   const job = await prisma.scrapeJob.create({
     data: {
       postUrl: trimmed,
+      status: "running",
+      startedAt: new Date(),
+      currentStep: "Starting up — connecting to Bright Data...",
     },
   })
 
@@ -74,12 +84,23 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Kick off the worker
-  const workerUrl = `${getBaseUrl()}/api/scrape/worker`
-  fetch(workerUrl, {
-    method: "POST",
-    headers: { "x-internal-key": process.env.INTERNAL_API_KEY || "" },
-  }).catch(() => {})
+  // Run the scrape in the background using after()
+  // The response returns immediately, but the function stays alive to process the job
+  after(async () => {
+    try {
+      await runQuickScrapeJob(job.id)
+    } catch (error) {
+      console.error(`Quick scrape job ${job.id} failed:`, error)
+      await prisma.scrapeJob.update({
+        where: { id: job.id },
+        data: {
+          status: "failed",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          completedAt: new Date(),
+        },
+      })
+    }
+  })
 
-  return NextResponse.json({ jobId: job.id, status: "queued" })
+  return NextResponse.json({ jobId: job.id, status: "running" })
 }

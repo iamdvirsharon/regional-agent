@@ -13,6 +13,17 @@ async function updateProgress(jobId: string, progress: number, step: string) {
   })
 }
 
+async function failJob(jobId: string, errorMessage: string) {
+  await prisma.scrapeJob.update({
+    where: { id: jobId },
+    data: {
+      status: "failed",
+      errorMessage,
+      completedAt: new Date(),
+    },
+  })
+}
+
 // ================================================================
 // Quick Scrape: paste a post URL → collect engagement → enrich → score → draft
 // ================================================================
@@ -30,10 +41,12 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
   if (!post) throw new Error(`ScrapedPost not found for URL ${job.postUrl}`)
 
   // ── Step 1: Collect comments ──
-  await updateProgress(jobId, 10, "Collecting post comments")
+  await updateProgress(jobId, 10, "Collecting post comments...")
 
+  let commentsCollected = 0
   try {
     const comments = await collectPostEngagement(post.linkedinPostUrl)
+    commentsCollected = comments.length
 
     for (const comment of comments) {
       if (!comment.commenterUrl) continue
@@ -66,12 +79,21 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
         // Unique constraint — already exists
       }
     }
+
+    await updateProgress(jobId, 20, `Found ${commentsCollected} comments`)
   } catch (error) {
-    console.error(`Quick scrape: failed to collect comments for ${post.linkedinPostUrl}:`, error)
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error(`Quick scrape: failed to collect comments:`, msg)
+    // If this is an API key error, fail the whole job immediately
+    if (msg.includes("BRIGHT_DATA_API_KEY") || msg.includes("401") || msg.includes("403")) {
+      await failJob(jobId, `Bright Data API error: ${msg}`)
+      return
+    }
+    await updateProgress(jobId, 20, `Comment collection failed: ${msg.slice(0, 100)}`)
   }
 
-  // ── Step 2: Collect likers ──
-  await updateProgress(jobId, 25, "Collecting post likers")
+  // ── Step 2: Collect likers (optional — skip if no dataset configured) ──
+  await updateProgress(jobId, 25, "Collecting post likers...")
 
   try {
     const likers = await collectPostLikers(post.linkedinPostUrl)
@@ -107,7 +129,8 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
       }
     }
   } catch (error) {
-    console.error(`Quick scrape: failed to collect likers for ${post.linkedinPostUrl}:`, error)
+    // Likers are optional — don't fail the job
+    console.error(`Quick scrape: likers skipped:`, error instanceof Error ? error.message : error)
   }
 
   // Mark post as engagement-collected
@@ -116,8 +139,27 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
     data: { engagementsCollected: true },
   })
 
+  await updateProgress(jobId, 30, `Found ${totalEngagersFound} engagers total`)
+
+  // If we found zero engagers, report that clearly
+  if (totalEngagersFound === 0 && commentsCollected === 0) {
+    await prisma.scrapeJob.update({
+      where: { id: jobId },
+      data: {
+        status: "completed",
+        progress: 100,
+        currentStep: "No engagers found on this post. The post may have no public comments.",
+        postsFound: 1,
+        engagersFound: 0,
+        draftsGenerated: 0,
+        completedAt: new Date(),
+      },
+    })
+    return
+  }
+
   // ── Step 3: Enrich new profiles ──
-  await updateProgress(jobId, 40, "Enriching engager profiles")
+  await updateProgress(jobId, 35, `Enriching ${totalEngagersFound} profiles...`)
 
   const unenriched = await prisma.engager.findMany({
     where: { profileEnriched: false },
@@ -131,7 +173,7 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
 
       await updateProgress(
         jobId,
-        40 + Math.round((batchStart / unenriched.length) * 15),
+        35 + Math.round((batchStart / unenriched.length) * 20),
         `Enriching profiles ${batchStart + 1}-${Math.min(batchStart + batchSize, unenriched.length)} of ${unenriched.length}`
       )
 
@@ -159,13 +201,14 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
           }
         }
       } catch (error) {
-        console.error(`Quick scrape: profile enrichment batch failed (batch starting at ${batchStart}):`, error)
+        console.error(`Profile enrichment batch failed:`, error instanceof Error ? error.message : error)
+        await updateProgress(jobId, 55, `Profile enrichment had errors — continuing with scoring`)
       }
     }
   }
 
   // ── Step 4: Score leads ──
-  await updateProgress(jobId, 58, "Scoring leads")
+  await updateProgress(jobId, 58, "Scoring leads...")
 
   const icpConfig = await prisma.iCPConfig.findFirst({ where: { isActive: true } })
   const icpTargetTitles = icpConfig?.targetTitles ? JSON.parse(icpConfig.targetTitles) : []
@@ -203,7 +246,7 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
   }
 
   // ── Step 5: Generate outreach drafts ──
-  await updateProgress(jobId, 68, "Generating outreach drafts")
+  await updateProgress(jobId, 65, "Generating outreach drafts...")
 
   const brandVoice = await prisma.brandVoice.findFirst({ where: { isDefault: true } })
   const brandGuidelines = brandVoice?.guidelines || `
@@ -234,7 +277,7 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
     const engagement = engagementsNeedingDrafts[i]
     await updateProgress(
       jobId,
-      68 + Math.round((i / engagementsNeedingDrafts.length) * 25),
+      65 + Math.round((i / engagementsNeedingDrafts.length) * 30),
       `Generating draft ${i + 1}/${engagementsNeedingDrafts.length}`
     )
 
@@ -271,17 +314,17 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
       })
       totalDraftsGenerated++
     } catch (error) {
-      console.error(`Quick scrape: failed to generate draft for ${engagement.engager.name}:`, error)
+      console.error(`Failed to generate draft for ${engagement.engager.name}:`, error instanceof Error ? error.message : error)
     }
   }
 
-  // ── Finalize (skip auto-export) ──
+  // ── Finalize ──
   await prisma.scrapeJob.update({
     where: { id: jobId },
     data: {
       status: "completed",
       progress: 100,
-      currentStep: "Quick scrape complete",
+      currentStep: `Done! Found ${totalEngagersFound} engagers, generated ${totalDraftsGenerated} drafts`,
       postsFound: 1,
       engagersFound: totalEngagersFound,
       draftsGenerated: totalDraftsGenerated,
@@ -310,9 +353,7 @@ export async function runScrapeJob(jobId: string): Promise<void> {
   let totalEngagersFound = 0
   let totalDraftsGenerated = 0
 
-  // ──────────────────────────────────────────────────
-  // Step 1: Discover recent posts for each employee
-  // ──────────────────────────────────────────────────
+  // ── Step 1: Discover recent posts for each employee ──
   await updateProgress(jobId, 5, "Discovering employee posts")
 
   for (let i = 0; i < employees.length; i++) {
@@ -358,9 +399,7 @@ export async function runScrapeJob(jobId: string): Promise<void> {
     }
   }
 
-  // ──────────────────────────────────────────────────
-  // Step 2: Collect engagement on new posts (comments + likers)
-  // ──────────────────────────────────────────────────
+  // ── Step 2: Collect engagement on new posts ──
   await updateProgress(jobId, 22, "Collecting post engagement")
 
   const newPosts = await prisma.scrapedPost.findMany({
@@ -380,7 +419,6 @@ export async function runScrapeJob(jobId: string): Promise<void> {
     )
 
     try {
-      // ── Collect comments ──
       const comments = await collectPostEngagement(post.linkedinPostUrl)
 
       for (const comment of comments) {
@@ -411,21 +449,18 @@ export async function runScrapeJob(jobId: string): Promise<void> {
             },
           })
         } catch {
-          // Unique constraint violation - already exists
+          // Unique constraint
         }
       }
 
-      // ── Collect likers ──
+      // Collect likers (optional)
       try {
         const likers = await collectPostLikers(post.linkedinPostUrl)
-
         for (const liker of likers) {
           if (!liker.likerUrl) continue
-
           let engager = await prisma.engager.findUnique({
             where: { linkedinUrl: liker.likerUrl },
           })
-
           if (!engager) {
             engager = await prisma.engager.create({
               data: {
@@ -436,25 +471,16 @@ export async function runScrapeJob(jobId: string): Promise<void> {
             })
             totalEngagersFound++
           }
-
           try {
             await prisma.engagement.create({
-              data: {
-                engagerId: engager.id,
-                scrapedPostId: post.id,
-                type: "like",
-              },
+              data: { engagerId: engager.id, scrapedPostId: post.id, type: "like" },
             })
-          } catch {
-            // Unique constraint violation - already exists
-          }
+          } catch { /* unique constraint */ }
         }
       } catch (error) {
-        console.error(`Failed to collect likers for post ${post.linkedinPostUrl}:`, error)
-        // Continue - comments were already collected
+        console.error(`Likers skipped for post ${post.linkedinPostUrl}:`, error instanceof Error ? error.message : error)
       }
 
-      // Mark post as engagement-collected
       await prisma.scrapedPost.update({
         where: { id: post.id },
         data: { engagementsCollected: true },
@@ -464,9 +490,7 @@ export async function runScrapeJob(jobId: string): Promise<void> {
     }
   }
 
-  // ──────────────────────────────────────────────────
-  // Step 3: Enrich ALL new engager profiles (no cap — BD is free)
-  // ──────────────────────────────────────────────────
+  // ── Step 3: Enrich profiles ──
   await updateProgress(jobId, 45, "Enriching engager profiles")
 
   const unenriched = await prisma.engager.findMany({
@@ -474,7 +498,6 @@ export async function runScrapeJob(jobId: string): Promise<void> {
   })
 
   if (unenriched.length > 0) {
-    // Process in batches of 100 for API reliability
     const batchSize = 100
     for (let batchStart = 0; batchStart < unenriched.length; batchStart += batchSize) {
       const batch = unenriched.slice(batchStart, batchStart + batchSize)
@@ -488,7 +511,6 @@ export async function runScrapeJob(jobId: string): Promise<void> {
 
       try {
         const enrichedProfiles = await enrichProfilesBatch(profileUrls)
-
         for (const engager of batch) {
           const profile = engager.linkedinUrl ? enrichedProfiles.get(engager.linkedinUrl) : undefined
           if (profile) {
@@ -510,35 +532,27 @@ export async function runScrapeJob(jobId: string): Promise<void> {
           }
         }
       } catch (error) {
-        console.error(`Profile enrichment batch failed (batch starting at ${batchStart}):`, error)
+        console.error(`Profile enrichment batch failed:`, error instanceof Error ? error.message : error)
       }
     }
   }
 
-  await updateProgress(jobId, 62, `Enriched ${unenriched.length} profiles`)
-
-  // ──────────────────────────────────────────────────
-  // Step 3b: Calculate lead scores for newly enriched engagers
-  // ──────────────────────────────────────────────────
+  // ── Step 3b: Score leads ──
   await updateProgress(jobId, 64, "Scoring leads")
 
-  // Load ICP config if available
   const icpConfig = await prisma.iCPConfig.findFirst({ where: { isActive: true } })
   const icpTargetTitles = icpConfig?.targetTitles ? JSON.parse(icpConfig.targetTitles) : []
   const icpExcludeTitles = icpConfig?.excludeTitles ? JSON.parse(icpConfig.excludeTitles) : []
   const icpExcludeCompanies = icpConfig?.excludeCompanies ? JSON.parse(icpConfig.excludeCompanies) : []
   const minLeadScore = icpConfig?.minLeadScore ?? 0
 
-  // Score all engagers that were just enriched (leadScore still 0)
   const needsScoring = await prisma.engager.findMany({
     where: { profileEnriched: true, leadScore: 0 },
     include: { engagements: true },
   })
 
   for (const engager of needsScoring) {
-    // Find the best engagement for scoring (prefer comments)
     const bestEngagement = engager.engagements.find((e) => e.type === "comment") || engager.engagements[0]
-
     const result = calculateLeadScore({
       currentTitle: engager.currentTitle,
       currentCompany: engager.currentCompany,
@@ -560,22 +574,16 @@ export async function runScrapeJob(jobId: string): Promise<void> {
     })
   }
 
-  // ──────────────────────────────────────────────────
-  // Step 4: Generate outreach drafts for new engagements
-  // ──────────────────────────────────────────────────
+  // ── Step 4: Generate outreach drafts ──
   await updateProgress(jobId, 68, "Generating outreach drafts")
 
-  const brandVoice = await prisma.brandVoice.findFirst({
-    where: { isDefault: true },
-  })
-
+  const brandVoice = await prisma.brandVoice.findFirst({ where: { isDefault: true } })
   const brandGuidelines = brandVoice?.guidelines || `
     You represent Bright Data, the world's leading web data platform.
     Be professional but approachable. Focus on the value of data and web intelligence.
     Show genuine interest in the prospect's work and how data can help them.
   `.trim()
 
-  // Find engagements without drafts, skip low-score engagers if ICP threshold is set
   const engagementsNeedingDrafts = await prisma.engagement.findMany({
     where: {
       outreachDrafts: { none: { channel: "linkedin" } },
@@ -587,9 +595,7 @@ export async function runScrapeJob(jobId: string): Promise<void> {
     },
     include: {
       engager: true,
-      scrapedPost: {
-        include: { employeeProfile: true },
-      },
+      scrapedPost: { include: { employeeProfile: true } },
     },
     orderBy: { engager: { leadScore: "desc" } },
   })
@@ -617,7 +623,6 @@ export async function runScrapeJob(jobId: string): Promise<void> {
 
     try {
       const draft = await generateOutreachDraft(ctx)
-
       await prisma.outreachDraft.create({
         data: {
           engagerId: engagement.engagerId,
@@ -635,13 +640,11 @@ export async function runScrapeJob(jobId: string): Promise<void> {
       })
       totalDraftsGenerated++
     } catch (error) {
-      console.error(`Failed to generate draft for engager ${engagement.engager.name}:`, error)
+      console.error(`Failed to generate draft for ${engagement.engager.name}:`, error instanceof Error ? error.message : error)
     }
   }
 
-  // ──────────────────────────────────────────────────
-  // Step 5: Auto-export to Google Sheets
-  // ──────────────────────────────────────────────────
+  // ── Step 5: Auto-export to Google Sheets ──
   await updateProgress(jobId, 92, "Exporting to Google Sheets")
 
   try {
@@ -649,20 +652,15 @@ export async function runScrapeJob(jobId: string): Promise<void> {
     await exportToSheets(jobId)
   } catch (error) {
     console.error("Auto-export failed (non-fatal):", error)
-    // Don't fail the job for export errors
   }
 
-  // ──────────────────────────────────────────────────
-  // Step 6: Finalize
-  // ──────────────────────────────────────────────────
-  await updateProgress(jobId, 95, "Finalizing")
-
+  // ── Finalize ──
   await prisma.scrapeJob.update({
     where: { id: jobId },
     data: {
       status: "completed",
       progress: 100,
-      currentStep: "Scrape complete",
+      currentStep: `Done! Found ${totalEngagersFound} engagers, generated ${totalDraftsGenerated} drafts`,
       postsFound: totalPostsFound,
       engagersFound: totalEngagersFound,
       draftsGenerated: totalDraftsGenerated,

@@ -96,11 +96,11 @@ async function triggerDataset<T>(datasetId: string, input: unknown[]): Promise<T
   return Array.isArray(data) ? data : data.results || []
 }
 
-async function pollSnapshot<T>(snapshotId: string, maxAttempts = 60): Promise<T[]> {
+async function pollSnapshot<T>(snapshotId: string, maxAttempts = 24): Promise<T[]> {
   const apiKey = await getApiKey()
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 10000)) // Wait 10s between polls
+    await new Promise((resolve) => setTimeout(resolve, 5000)) // Wait 5s between polls (24×5s = 2min max)
 
     const res = await fetch(
       `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`,
