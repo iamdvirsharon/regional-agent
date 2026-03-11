@@ -5,35 +5,35 @@ import { invalidateConfigCache } from "@/lib/config"
 // All known API keys grouped by category
 const API_KEY_DEFINITIONS = [
   {
-    group: "Scraping",
+    group: "Required",
     keys: [
-      { key: "BRIGHT_DATA_API_KEY", label: "Bright Data API Key", description: "Required for LinkedIn scraping" },
-      { key: "BRIGHT_DATA_LIKERS_DATASET", label: "Likers Dataset ID", description: "Optional — enables post liker collection" },
-      { key: "BRIGHT_DATA_COMPANY_DATASET", label: "Company Dataset ID", description: "Optional — enables auto-discover employees" },
-      { key: "BRIGHT_DATA_YOUTUBE_COMMENTS_DATASET", label: "YouTube Comments Dataset ID", description: "Required for YouTube comment scraping" },
+      { key: "BRIGHT_DATA_API_KEY", label: "Bright Data API Key", description: "Powers all LinkedIn scraping — get yours at brightdata.com" },
+      { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", description: "Powers AI outreach draft generation — get yours at console.anthropic.com" },
     ],
   },
   {
-    group: "AI",
+    group: "Enrichment (Optional)",
     keys: [
-      { key: "ANTHROPIC_API_KEY", label: "Anthropic API Key", description: "Required for AI draft generation" },
+      { key: "APOLLO_API_KEY", label: "Apollo.io API Key", description: "Find emails and company info for engagers" },
+      { key: "LEADIQ_API_KEY", label: "LeadIQ API Key", description: "Alternative email enrichment provider" },
+      { key: "ZOOMINFO_CLIENT_ID", label: "ZoomInfo Client ID", description: "Enterprise enrichment (client ID)" },
+      { key: "ZOOMINFO_PRIVATE_KEY", label: "ZoomInfo Private Key", description: "Enterprise enrichment (private key)" },
     ],
   },
   {
-    group: "Enrichment",
+    group: "Google Sheets (Optional)",
     keys: [
-      { key: "APOLLO_API_KEY", label: "Apollo.io API Key", description: "Apollo people enrichment" },
-      { key: "ZOOMINFO_CLIENT_ID", label: "ZoomInfo Client ID", description: "ZoomInfo enrichment (client ID)" },
-      { key: "ZOOMINFO_PRIVATE_KEY", label: "ZoomInfo Private Key", description: "ZoomInfo enrichment (private key)" },
-      { key: "LEADIQ_API_KEY", label: "LeadIQ API Key", description: "LeadIQ people enrichment" },
+      { key: "GOOGLE_SERVICE_ACCOUNT_EMAIL", label: "Service Account Email", description: "For auto-export to Google Sheets" },
+      { key: "GOOGLE_SERVICE_ACCOUNT_KEY", label: "Service Account Key", description: "JSON private key for the service account" },
+      { key: "GOOGLE_SHEET_ID", label: "Google Sheet ID", description: "Target spreadsheet ID" },
     ],
   },
   {
-    group: "Export",
+    group: "Advanced (Optional)",
     keys: [
-      { key: "GOOGLE_SERVICE_ACCOUNT_EMAIL", label: "Google Service Account Email", description: "Required for Sheets export" },
-      { key: "GOOGLE_SERVICE_ACCOUNT_KEY", label: "Google Service Account Key", description: "Required for Sheets export" },
-      { key: "GOOGLE_SHEET_ID", label: "Google Sheet ID", description: "Target spreadsheet for BDR delivery" },
+      { key: "BRIGHT_DATA_LIKERS_DATASET", label: "Likers Dataset ID", description: "Custom Bright Data dataset for post likers — leave blank to skip likers" },
+      { key: "BRIGHT_DATA_COMPANY_DATASET", label: "Company Dataset ID", description: "Custom Bright Data dataset for company employee discovery" },
+      { key: "BRIGHT_DATA_YOUTUBE_COMMENTS_DATASET", label: "YouTube Comments Dataset ID", description: "Custom Bright Data dataset for YouTube comment scraping" },
     ],
   },
 ]

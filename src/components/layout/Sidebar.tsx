@@ -40,7 +40,7 @@ const allNavItems: NavItem[] = [
   { href: "/engagers", label: "Engagers", icon: Users, adminOnly: false, group: "pipeline", completionKey: "hasEngagers" },
   { href: "/enrichment", label: "Enrichment", icon: Search, adminOnly: true, group: "pipeline" },
   { href: "/drafts", label: "Outreach Drafts", icon: MessageSquare, adminOnly: false, group: "pipeline", completionKey: "hasDrafts" },
-  { href: "/export", label: "Export to Sheets", icon: Upload, adminOnly: true, group: "pipeline" },
+  { href: "/export", label: "Export", icon: Upload, adminOnly: true, group: "pipeline" },
 ]
 
 export function Sidebar() {

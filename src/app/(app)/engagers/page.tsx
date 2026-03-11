@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Users, ExternalLink, Filter, Send, X, Video } from "lucide-react"
+import { Users, ExternalLink, Filter, Send, X, Video, Download } from "lucide-react"
 import { EmptyState } from "@/components/shared/EmptyState"
 import { StepBanner } from "@/components/shared/StepBanner"
 
@@ -168,6 +168,16 @@ export default function EngagersPage() {
         <span className="text-sm text-gray-500">
           {data?.total || 0} engagers found
         </span>
+        {(data?.total ?? 0) > 0 && (
+          <a
+            href="/api/export/csv?type=engagers"
+            download
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </a>
+        )}
       </div>
 
       {/* Selection Action Bar */}

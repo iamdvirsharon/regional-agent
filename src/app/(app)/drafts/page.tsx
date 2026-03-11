@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { MessageSquare, Copy, Check, ExternalLink, Search, Star, Mail, Video } from "lucide-react"
+import { MessageSquare, Copy, Check, ExternalLink, Search, Star, Mail, Video, Download } from "lucide-react"
 import { EmptyState } from "@/components/shared/EmptyState"
 import { PrereqWarning } from "@/components/shared/PrereqWarning"
 import { useStats } from "@/components/providers/StatsProvider"
@@ -215,6 +215,16 @@ export default function DraftsPage() {
           ))}
         </div>
 
+        {(data?.total ?? 0) > 0 && (
+          <a
+            href="/api/export/csv?type=drafts"
+            download
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border rounded-lg hover:bg-gray-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </a>
+        )}
         <div className="flex gap-2 ml-auto">
           {["draft", "exported", "sent", ""].map((s) => (
             <button
