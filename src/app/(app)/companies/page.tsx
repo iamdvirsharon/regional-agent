@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react"
 import { Building2, Plus, Users, Trash2, Play, Search, Upload } from "lucide-react"
+import { useStats } from "@/components/providers/StatsProvider"
+import { PrereqWarning } from "@/components/shared/PrereqWarning"
+import { EmptyState } from "@/components/shared/EmptyState"
+import { StepBanner } from "@/components/shared/StepBanner"
 
 interface Employee {
   id: string
@@ -41,6 +45,7 @@ export default function CompaniesPage() {
   const [newCompany, setNewCompany] = useState({ name: "", linkedinUrl: "" })
   const [newEmployee, setNewEmployee] = useState({ name: "", linkedinUrl: "", role: "" })
   const [bulkText, setBulkText] = useState("")
+  const { stats } = useStats()
 
   async function fetchCompanies() {
     const res = await fetch("/api/companies")
@@ -141,6 +146,7 @@ export default function CompaniesPage() {
   }
 
   return (
+    <>
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -157,6 +163,15 @@ export default function CompaniesPage() {
           Add Company
         </button>
       </div>
+
+      {/* Prereq Warning */}
+      {stats && !stats.setupStatus.hasBrightDataKey && (
+        <PrereqWarning
+          message="Bright Data API key is required to scrape LinkedIn posts. Configure it before running scrapes."
+          linkLabel="Go to Settings"
+          href="/settings"
+        />
+      )}
 
       {/* Discover Result Toast */}
       {discoverResult && (
@@ -201,11 +216,13 @@ export default function CompaniesPage() {
       {/* Companies List */}
       <div className="space-y-4">
         {companies.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
-            <Building2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <h3 className="font-semibold text-gray-900">No companies yet</h3>
-            <p className="text-sm text-gray-500 mt-1">Add a company to start monitoring LinkedIn engagement</p>
-          </div>
+          <EmptyState
+            icon={Building2}
+            heading="Add your first company and executive LinkedIn profiles"
+            description="The system will scrape their LinkedIn posts and discover who's engaging — likes, comments, and reactions from potential leads."
+            secondaryText={stats && !stats.setupStatus.hasBrightDataKey ? "Configure API keys first" : undefined}
+            secondaryHref={stats && !stats.setupStatus.hasBrightDataKey ? "/settings" : undefined}
+          />
         ) : (
           companies.map((company) => (
             <div key={company.id} className="bg-white rounded-xl border">
@@ -356,5 +373,14 @@ export default function CompaniesPage() {
         )}
       </div>
     </div>
+
+    <StepBanner
+      currentStep={2}
+      totalSteps={6}
+      prevPage={{ label: "Settings", href: "/settings" }}
+      nextPage={{ label: "Engagers", href: "/engagers" }}
+      nextReady={companies.length > 0}
+    />
+    </>
   )
 }

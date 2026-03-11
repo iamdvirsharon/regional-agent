@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { runScrapeJob } from "@/lib/scrape/engine"
+import { runScrapeJob, runQuickScrapeJob } from "@/lib/scrape/engine"
 import { getBaseUrl } from "@/lib/url"
 
 export const maxDuration = 300
@@ -24,6 +24,15 @@ export async function POST(req: NextRequest) {
     data: { status: "queued", currentStep: "Resumed after timeout" },
   })
 
+  // Cancel stale queued jobs older than 1 hour (likely orphaned)
+  await prisma.scrapeJob.updateMany({
+    where: {
+      status: "queued",
+      createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) },
+    },
+    data: { status: "failed", errorMessage: "Cancelled: stale queued job", completedAt: new Date() },
+  })
+
   // Atomically claim the next queued job
   const job = await prisma.scrapeJob.findFirst({
     where: { status: "queued" },
@@ -41,7 +50,12 @@ export async function POST(req: NextRequest) {
   })
 
   try {
-    await runScrapeJob(job.id)
+    // Route quick scrape jobs (no company, has postUrl) to dedicated handler
+    if (!job.companyId && job.postUrl) {
+      await runQuickScrapeJob(job.id)
+    } else {
+      await runScrapeJob(job.id)
+    }
   } catch (error) {
     console.error(`Scrape job ${job.id} failed:`, error)
 

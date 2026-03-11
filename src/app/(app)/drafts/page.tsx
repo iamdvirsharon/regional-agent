@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react"
 import { MessageSquare, Copy, Check, ExternalLink, Search, Star, Mail, Video } from "lucide-react"
+import { EmptyState } from "@/components/shared/EmptyState"
+import { PrereqWarning } from "@/components/shared/PrereqWarning"
+import { useStats } from "@/components/providers/StatsProvider"
+import { StepBanner } from "@/components/shared/StepBanner"
 
 interface Draft {
   id: string
@@ -71,6 +75,7 @@ export default function DraftsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState("")
+  const { stats } = useStats()
 
   async function fetchDrafts() {
     setLoading(true)
@@ -144,6 +149,7 @@ export default function DraftsPage() {
   }
 
   return (
+    <>
     <div className="p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Outreach Drafts</h1>
@@ -151,6 +157,15 @@ export default function DraftsPage() {
           AI-generated personalized messages — edit, copy, and track outcomes
         </p>
       </div>
+
+      {/* Prereq Warning */}
+      {stats && !stats.setupStatus.hasAnthropicKey && (
+        <PrereqWarning
+          message="Anthropic API key is required to generate AI outreach drafts. Configure it in Settings."
+          linkLabel="Go to Settings"
+          href="/settings"
+        />
+      )}
 
       {/* Search + Filters */}
       <div className="flex gap-3 items-center flex-wrap">
@@ -226,13 +241,14 @@ export default function DraftsPage() {
             ))}
           </div>
         ) : data?.drafts.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
-            <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <h3 className="font-semibold text-gray-900">No drafts found</h3>
-            <p className="text-sm text-gray-500 mt-1">
-              {search ? "Try a different search" : "Run a scrape to generate personalized outreach drafts"}
-            </p>
-          </div>
+          <EmptyState
+            icon={MessageSquare}
+            heading="No drafts found"
+            description={search
+              ? "Try a different search or clear your filters."
+              : "Outreach drafts are generated automatically when you scrape a LinkedIn post. Go to the Dashboard and paste a post URL in Quick Scrape to get started."}
+            primaryCTA={!search ? { label: "Go to Dashboard", href: "/" } : undefined}
+          />
         ) : (
           data?.drafts.map((draft) => (
             <div key={draft.id} className="bg-white rounded-xl border p-6">
@@ -436,5 +452,14 @@ export default function DraftsPage() {
         </div>
       )}
     </div>
+
+      <StepBanner
+        currentStep={5}
+        totalSteps={6}
+        prevPage={{ label: "Enrichment", href: "/enrichment" }}
+        nextPage={{ label: "Export", href: "/export" }}
+        nextReady={(data?.total ?? 0) > 0}
+      />
+    </>
   )
 }

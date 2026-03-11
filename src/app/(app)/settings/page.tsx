@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { Settings, Plus, Check, Target, Save, Key, Eye, EyeOff, Trash2, Pencil } from "lucide-react"
+import { StepBanner } from "@/components/shared/StepBanner"
 
 interface ICPConfig {
   id: string
@@ -159,6 +160,7 @@ export default function SettingsPage() {
   }
 
   return (
+    <>
     <div className="p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
@@ -496,5 +498,12 @@ export default function SettingsPage() {
         </form>
       </div>
     </div>
+
+      <StepBanner
+        currentStep={1}
+        totalSteps={6}
+        nextPage={{ label: "Companies", href: "/companies" }}
+      />
+    </>
   )
 }

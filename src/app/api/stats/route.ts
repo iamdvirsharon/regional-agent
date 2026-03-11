@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { hasConfigValue } from "@/lib/config"
 
 export async function GET() {
   const today = new Date()
@@ -48,6 +49,10 @@ export async function GET() {
       take: 10,
     }),
     prisma.scrapeJob.findMany({
+      where: {
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        NOT: { status: "failed", errorMessage: { startsWith: "Cancelled:" } },
+      },
       orderBy: { createdAt: "desc" },
       take: 5,
       include: { company: { select: { name: true } } },
@@ -123,6 +128,20 @@ export async function GET() {
     connected: outcomeMap["connected"] || 0,
   }
 
+  // Setup status for pipeline tracker
+  const [hasBrightDataKey, hasAnthropicKey, hasApolloKey, hasZoomInfoKey, hasLeadIQKey, hasExportEmail, hasExportSheet, brandVoiceCount] = await Promise.all([
+    hasConfigValue("BRIGHT_DATA_API_KEY"),
+    hasConfigValue("ANTHROPIC_API_KEY"),
+    hasConfigValue("APOLLO_API_KEY"),
+    hasConfigValue("ZOOMINFO_CLIENT_ID"),
+    hasConfigValue("LEADIQ_API_KEY"),
+    hasConfigValue("GOOGLE_SERVICE_ACCOUNT_EMAIL"),
+    hasConfigValue("GOOGLE_SHEET_ID"),
+    prisma.brandVoice.count(),
+  ])
+
+  const lastCompletedJob = recentJobs.find((j) => j.status === "completed")
+
   return NextResponse.json({
     totalCompanies,
     totalEmployees,
@@ -143,5 +162,14 @@ export async function GET() {
     enrichedCount,
     engagersWithEmail,
     emailCoverage: totalEngagers > 0 ? Math.round((engagersWithEmail / totalEngagers) * 100) : 0,
+    // Pipeline setup status
+    setupStatus: {
+      hasBrightDataKey,
+      hasAnthropicKey,
+      hasBrandVoice: brandVoiceCount > 0,
+      hasEnrichmentKey: hasApolloKey || hasZoomInfoKey || hasLeadIQKey,
+      hasExportKeys: hasExportEmail && hasExportSheet,
+    },
+    lastScrapeAt: lastCompletedJob?.completedAt || null,
   })
 }

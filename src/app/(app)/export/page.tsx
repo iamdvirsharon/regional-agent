@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { Upload, ExternalLink, CheckCircle, AlertCircle, Clock } from "lucide-react"
+import { PrereqWarning } from "@/components/shared/PrereqWarning"
+import { useStats } from "@/components/providers/StatsProvider"
+import { StepBanner } from "@/components/shared/StepBanner"
 
 interface ExportLogEntry {
   id: string
@@ -24,6 +27,7 @@ export default function ExportPage() {
   const [error, setError] = useState<string | null>(null)
   const [logs, setLogs] = useState<ExportLogEntry[]>([])
   const [loadingLogs, setLoadingLogs] = useState(true)
+  const { stats } = useStats()
 
   async function fetchLogs() {
     try {
@@ -56,6 +60,7 @@ export default function ExportPage() {
   }
 
   return (
+    <>
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -73,6 +78,15 @@ export default function ExportPage() {
           {exporting ? "Exporting..." : "Re-export Now"}
         </button>
       </div>
+
+      {/* Prereq Warning */}
+      {stats && !stats.setupStatus.hasExportKeys && (
+        <PrereqWarning
+          message="Google Sheets export requires a service account email and sheet ID. Configure them in Settings."
+          linkLabel="Go to Settings"
+          href="/settings"
+        />
+      )}
 
       {result && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-6">
@@ -124,7 +138,13 @@ export default function ExportPage() {
         {loadingLogs ? (
           <div className="animate-pulse h-20 bg-gray-100 rounded" />
         ) : logs.length === 0 ? (
-          <p className="text-sm text-gray-500">No exports yet. Exports happen automatically after each scrape.</p>
+          <div className="py-8 text-center">
+            <Upload className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+            <h3 className="font-semibold text-gray-900">No exports yet</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Export drafts to Google Sheets for your BDR team, organized by country. Exports also run automatically after each scrape.
+            </p>
+          </div>
         ) : (
           <div className="divide-y">
             {logs.map((log) => {
@@ -164,5 +184,13 @@ export default function ExportPage() {
         )}
       </div>
     </div>
+
+      <StepBanner
+        currentStep={6}
+        totalSteps={6}
+        prevPage={{ label: "Drafts", href: "/drafts" }}
+        nextPage={{ label: "Dashboard", href: "/" }}
+      />
+    </>
   )
 }

@@ -41,7 +41,7 @@ model EmployeeProfile {
 
 model ScrapedPost {
   id                String   @id @default(cuid())
-  employeeProfileId String
+  employeeProfileId String?  // null for quick scrapes
   linkedinPostUrl   String
   postUrn           String   @unique
   postText          String
@@ -51,7 +51,7 @@ model ScrapedPost {
   engagementsCollected Boolean @default(false)
   scrapedAt         DateTime @default(now())
 
-  employeeProfile EmployeeProfile @relation(fields: [employeeProfileId], references: [id], onDelete: Cascade)
+  employeeProfile EmployeeProfile? @relation(fields: [employeeProfileId], references: [id], onDelete: Cascade)
   engagements     Engagement[]
 
   @@index([employeeProfileId])
@@ -147,7 +147,8 @@ model OutreachDraft {
 
 model ScrapeJob {
   id             String    @id @default(cuid())
-  companyId      String
+  companyId      String?   // null for quick scrapes
+  postUrl        String?   // set for quick scrapes
   status         String    @default("queued") // "queued" | "running" | "completed" | "failed"
   progress       Int       @default(0)
   currentStep    String?
@@ -159,7 +160,7 @@ model ScrapeJob {
   completedAt    DateTime?
   createdAt      DateTime  @default(now())
 
-  company   MonitoredCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   MonitoredCompany? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   exportLog ExportLog?
 
   @@index([status, createdAt])

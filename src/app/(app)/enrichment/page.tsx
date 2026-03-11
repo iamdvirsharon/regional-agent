@@ -2,6 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { Search, Loader2, CheckCircle, XCircle, Clock, AlertCircle, ChevronDown, ChevronRight, Play } from "lucide-react"
+import { EmptyState } from "@/components/shared/EmptyState"
+import { PrereqWarning } from "@/components/shared/PrereqWarning"
+import { useStats } from "@/components/providers/StatsProvider"
+import { StepBanner } from "@/components/shared/StepBanner"
 
 interface EnrichmentList {
   id: string
@@ -57,6 +61,7 @@ export default function EnrichmentPage() {
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<ListDetail | null>(null)
+  const { stats } = useStats()
 
   const fetchLists = useCallback(async () => {
     const res = await fetch("/api/enrichment/lists")
@@ -133,6 +138,7 @@ export default function EnrichmentPage() {
   }
 
   return (
+    <>
     <div className="p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Enrichment</h1>
@@ -140,6 +146,15 @@ export default function EnrichmentPage() {
           Enrich engager profiles with email, title, and company data via Apollo, ZoomInfo, or LeadIQ
         </p>
       </div>
+
+      {/* Prereq Warning */}
+      {stats && !stats.setupStatus.hasEnrichmentKey && (
+        <PrereqWarning
+          message="No enrichment provider configured. Add an Apollo, ZoomInfo, or LeadIQ API key to enable enrichment."
+          linkLabel="Go to Settings"
+          href="/settings"
+        />
+      )}
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
         <div className="flex items-start gap-2">
@@ -155,13 +170,12 @@ export default function EnrichmentPage() {
           <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
         </div>
       ) : lists.length === 0 ? (
-        <div className="bg-white rounded-xl border p-12 text-center">
-          <Search className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="font-semibold text-gray-900">No enrichment lists yet</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Select engagers from the Engagers page to create your first list
-          </p>
-        </div>
+        <EmptyState
+          icon={Search}
+          heading="No enrichment lists yet"
+          description="Enrichment adds email addresses and verified company data to your best leads. Select engagers on the Engagers page to create a list."
+          primaryCTA={{ label: "Go to Engagers", href: "/engagers" }}
+        />
       ) : (
         <div className="space-y-3">
           {lists.map((list) => (
@@ -251,5 +265,13 @@ export default function EnrichmentPage() {
         </div>
       )}
     </div>
+
+      <StepBanner
+        currentStep={4}
+        totalSteps={6}
+        prevPage={{ label: "Engagers", href: "/engagers" }}
+        nextPage={{ label: "Drafts", href: "/drafts" }}
+      />
+    </>
   )
 }

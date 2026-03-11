@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { Users, ExternalLink, Filter, Send, X, Video } from "lucide-react"
+import { EmptyState } from "@/components/shared/EmptyState"
+import { StepBanner } from "@/components/shared/StepBanner"
 
 interface Engager {
   id: string
@@ -128,6 +130,7 @@ export default function EngagersPage() {
   }
 
   return (
+    <>
     <div className="p-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Engagers</h1>
@@ -278,9 +281,13 @@ export default function EngagersPage() {
               </tr>
             ) : data?.engagers.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center">
-                  <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">No engagers found. Run a scrape to discover engagement.</p>
+                <td colSpan={8} className="px-4 py-2">
+                  <EmptyState
+                    icon={Users}
+                    heading="No engagers found"
+                    description="Paste a LinkedIn post URL in the Quick Scrape box on the Dashboard to find engagers instantly. Or add a company and run a full scrape."
+                    primaryCTA={{ label: "Go to Dashboard", href: "/" }}
+                  />
                 </td>
               </tr>
             ) : (
@@ -398,6 +405,15 @@ export default function EngagersPage() {
         </div>
       )}
     </div>
+
+      <StepBanner
+        currentStep={3}
+        totalSteps={6}
+        prevPage={{ label: "Companies", href: "/companies" }}
+        nextPage={{ label: "Enrichment", href: "/enrichment" }}
+        nextReady={(data?.total ?? 0) > 0}
+      />
+    </>
   )
 }
 
