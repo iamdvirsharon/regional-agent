@@ -64,11 +64,14 @@ async function getApiKey(): Promise<string> {
   return apiKey
 }
 
-async function triggerDataset<T>(datasetId: string, input: unknown[]): Promise<T[]> {
+async function triggerDataset<T>(datasetId: string, input: unknown[], options?: { discover?: boolean }): Promise<T[]> {
   const apiKey = await getApiKey()
 
+  // Only use discover params when discovering posts from a profile URL (not when fetching specific post/profile data)
+  const discoverParams = options?.discover ? "&type=discover_new&discover_by=url" : ""
+
   const res = await fetch(
-    `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${datasetId}&include_errors=true&type=discover_new&discover_by=url`,
+    `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${datasetId}&include_errors=true${discoverParams}`,
     {
       method: "POST",
       headers: {
@@ -141,18 +144,18 @@ export async function discoverPosts(
   const datasetId = (await getConfigValue("BRIGHT_DATA_POSTS_DATASET")) || "gd_lyy3tktm25m4avu764"
 
   const rawPosts = await triggerDataset<Record<string, unknown>>(datasetId, [
-    { url: profileUrl, num_of_posts: numPosts },
-  ])
+    { url: profileUrl },
+  ], { discover: true })
 
   return rawPosts.map((post) => ({
-    url: String(post.post_url || post.url || ""),
-    urn: String(post.post_urn || post.urn || post.post_url || ""),
+    url: String(post.url || post.post_url || ""),
+    urn: String(post.id || post.post_urn || post.urn || post.url || ""),
     text: String(post.post_text || post.text || post.content || ""),
     datePosted: post.date_posted ? String(post.date_posted) : post.timestamp ? String(post.timestamp) : null,
     numLikes: Number(post.num_likes || post.likes || 0),
     numComments: Number(post.num_comments || post.comments || 0),
-    authorName: String(post.author_name || post.poster_name || ""),
-    authorUrl: String(post.author_url || post.poster_url || profileUrl),
+    authorName: String(post.user_id || post.author_name || post.poster_name || ""),
+    authorUrl: String(post.use_url || post.author_url || post.poster_url || profileUrl),
   }))
 }
 
@@ -176,50 +179,28 @@ export async function collectPostEngagement(
   const post = rawPosts[0]
 
   // Extract comments from the post response
-  // BD returns comments in various possible fields
+  // BD returns comments in `top_visible_comments` field with structure:
+  // { use_url, user_id, user_name, comment, comment_date, num_reactions, user_title }
   const comments: PostComment[] = []
 
-  // Check for top_visible_comments (array of comment objects)
   const rawComments = (post.top_visible_comments || post.comments_list || post.comments || []) as Record<string, unknown>[]
   if (Array.isArray(rawComments)) {
     for (const comment of rawComments) {
       if (typeof comment === "object" && comment !== null) {
-        comments.push({
-          commenterName: String(comment.commenter_name || comment.author_name || comment.name || comment.author || "Unknown"),
-          commenterUrl: String(comment.commenter_url || comment.author_url || comment.profile_url || comment.author_profile_url || ""),
-          commenterHeadline: comment.commenter_headline ? String(comment.commenter_headline) : comment.headline ? String(comment.headline) : comment.author_headline ? String(comment.author_headline) : null,
-          commentText: String(comment.comment_text || comment.text || comment.content || comment.comment || ""),
-          timestamp: comment.timestamp ? String(comment.timestamp) : comment.date ? String(comment.date) : null,
-        })
-      } else if (typeof comment === "string") {
-        // Sometimes comments are just strings
-        comments.push({
-          commenterName: "Unknown",
-          commenterUrl: "",
-          commenterHeadline: null,
-          commentText: comment,
-          timestamp: null,
-        })
-      }
-    }
-  }
-
-  // Also check for reactions/likers embedded in the post
-  const rawReactions = (post.reactions || post.likers || []) as Record<string, unknown>[]
-  if (Array.isArray(rawReactions)) {
-    for (const reaction of rawReactions) {
-      if (typeof reaction === "object" && reaction !== null) {
-        const name = String(reaction.name || reaction.full_name || reaction.author || "Unknown")
-        const url = String(reaction.profile_url || reaction.url || reaction.author_url || "")
-        if (url && !comments.some(c => c.commenterUrl === url)) {
-          comments.push({
-            commenterName: name,
-            commenterUrl: url,
-            commenterHeadline: reaction.headline ? String(reaction.headline) : null,
-            commentText: `[Reacted to post]`,
-            timestamp: null,
-          })
+        // Build profile URL from use_url or user_id
+        let profileUrl = String(comment.use_url || comment.commenter_url || comment.author_url || comment.profile_url || "")
+        // BD sometimes returns company URLs — normalize LinkedIn profile URLs
+        if (!profileUrl && comment.user_id) {
+          profileUrl = `https://www.linkedin.com/in/${comment.user_id}`
         }
+
+        comments.push({
+          commenterName: String(comment.user_name || comment.commenter_name || comment.author_name || comment.name || "Unknown"),
+          commenterUrl: profileUrl,
+          commenterHeadline: comment.user_title ? String(comment.user_title) : comment.headline ? String(comment.headline) : null,
+          commentText: String(comment.comment || comment.comment_text || comment.text || comment.content || ""),
+          timestamp: comment.comment_date ? String(comment.comment_date) : comment.timestamp ? String(comment.timestamp) : null,
+        })
       }
     }
   }
