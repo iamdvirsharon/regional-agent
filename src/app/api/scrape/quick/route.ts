@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { runQuickScrapeJob } from "@/lib/scrape/engine"
 
-export const maxDuration = 300
+export const maxDuration = 60 // Vercel Hobby plan max
 
 export async function GET(req: NextRequest) {
   const jobId = req.nextUrl.searchParams.get("jobId")
@@ -103,4 +103,33 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json({ jobId: job.id, status: "running" })
+}
+
+/**
+ * DELETE — reset a previously scraped post so it can be re-scraped
+ */
+export async function DELETE(req: NextRequest) {
+  const postUrl = req.nextUrl.searchParams.get("postUrl")
+  if (!postUrl) {
+    return NextResponse.json({ error: "postUrl query param is required" }, { status: 400 })
+  }
+
+  const postUrn = `quick:${postUrl}`
+
+  // Delete engagements, drafts, and the scraped post
+  const post = await prisma.scrapedPost.findUnique({ where: { postUrn } })
+  if (post) {
+    // Delete drafts linked through engagements on this post
+    await prisma.outreachDraft.deleteMany({
+      where: { engagement: { scrapedPostId: post.id } },
+    })
+    // Delete engagements
+    await prisma.engagement.deleteMany({
+      where: { scrapedPostId: post.id },
+    })
+    // Delete the scraped post
+    await prisma.scrapedPost.delete({ where: { id: post.id } })
+  }
+
+  return NextResponse.json({ success: true, deleted: !!post })
 }

@@ -42,11 +42,13 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
 
   // ── Step 1: Collect comments ──
   await updateProgress(jobId, 10, "Collecting post comments...")
+  console.log(`[Engine] Quick scrape job ${jobId}: collecting comments for ${post.linkedinPostUrl}`)
 
   let commentsCollected = 0
   try {
     const comments = await collectPostEngagement(post.linkedinPostUrl)
     commentsCollected = comments.length
+    console.log(`[Engine] Got ${commentsCollected} comments`)
 
     for (const comment of comments) {
       if (!comment.commenterUrl) continue
@@ -83,13 +85,13 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
     await updateProgress(jobId, 20, `Found ${commentsCollected} comments`)
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    console.error(`Quick scrape: failed to collect comments:`, msg)
+    console.error(`[Engine] Quick scrape: failed to collect comments:`, msg)
     // If this is an API key error, fail the whole job immediately
     if (msg.includes("BRIGHT_DATA_API_KEY") || msg.includes("401") || msg.includes("403")) {
       await failJob(jobId, `Bright Data API error: ${msg}`)
       return
     }
-    await updateProgress(jobId, 20, `Comment collection failed: ${msg.slice(0, 100)}`)
+    await updateProgress(jobId, 20, `Comment collection failed: ${msg.slice(0, 150)}`)
   }
 
   // ── Step 2: Collect likers (optional — skip if no dataset configured) ──
@@ -141,14 +143,21 @@ export async function runQuickScrapeJob(jobId: string): Promise<void> {
 
   await updateProgress(jobId, 30, `Found ${totalEngagersFound} engagers total`)
 
-  // If we found zero engagers, report that clearly
+  // If we found zero engagers, report that clearly — include any error info
   if (totalEngagersFound === 0 && commentsCollected === 0) {
+    // Check if there was an error stored in progress
+    const currentJob = await prisma.scrapeJob.findUnique({ where: { id: jobId } })
+    const stepInfo = currentJob?.currentStep || ""
+    const hasError = stepInfo.includes("failed")
+
     await prisma.scrapeJob.update({
       where: { id: jobId },
       data: {
         status: "completed",
         progress: 100,
-        currentStep: "No engagers found. The post may have no public comments, or the URL may be invalid. Try a different LinkedIn post URL.",
+        currentStep: hasError
+          ? `No engagers found. ${stepInfo}`
+          : "No engagers found. The post may have no public comments, or the URL may be invalid. Try a different LinkedIn post URL.",
         postsFound: 1,
         engagersFound: 0,
         draftsGenerated: 0,

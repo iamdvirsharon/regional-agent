@@ -84,27 +84,31 @@ async function triggerDataset<T>(datasetId: string, input: unknown[], options?: 
 
   if (!res.ok) {
     const errorText = await res.text()
-    console.error(`Bright Data dataset ${datasetId} error:`, errorText)
+    console.error(`[BD] Dataset ${datasetId} HTTP error ${res.status}:`, errorText)
     throw new Error(`Bright Data API error: ${res.status} - ${errorText}`)
   }
 
   const data = await res.json()
+  console.log(`[BD] Dataset ${datasetId} response type: ${data.snapshot_id ? "snapshot" : "inline"}, keys: ${Object.keys(data).join(",")}`)
 
   // BD returns snapshot_id for async collection - need to poll for results
   if (data.snapshot_id) {
+    console.log(`[BD] Polling snapshot ${data.snapshot_id}...`)
     return await pollSnapshot<T>(data.snapshot_id)
   }
 
   // Direct response — filter out error entries
   const rawResults = Array.isArray(data) ? data : data.results || []
-  return rawResults.filter((item: Record<string, unknown>) => !item.error)
+  const filtered = rawResults.filter((item: Record<string, unknown>) => !item.error)
+  console.log(`[BD] Inline results: ${rawResults.length} total, ${filtered.length} after filtering errors`)
+  return filtered
 }
 
-async function pollSnapshot<T>(snapshotId: string, maxAttempts = 24): Promise<T[]> {
+async function pollSnapshot<T>(snapshotId: string, maxAttempts = 10): Promise<T[]> {
   const apiKey = await getApiKey()
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 5000)) // Wait 5s between polls (24×5s = 2min max)
+    await new Promise((resolve) => setTimeout(resolve, 5000)) // Wait 5s between polls (10×5s = 50s max, fits Vercel 60s limit)
 
     const res = await fetch(
       `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`,
@@ -205,7 +209,11 @@ export async function collectPostEngagement(
     }
   }
 
-  console.log(`collectPostEngagement: found ${comments.length} comments/reactions from post data`)
+  console.log(`[BD] collectPostEngagement: ${rawPosts.length} posts returned, ${rawComments.length} raw comments, ${comments.length} parsed comments`)
+  if (rawPosts.length > 0) {
+    const postKeys = Object.keys(rawPosts[0]).join(",")
+    console.log(`[BD] Post fields: ${postKeys.slice(0, 200)}`)
+  }
   return comments
 }
 
